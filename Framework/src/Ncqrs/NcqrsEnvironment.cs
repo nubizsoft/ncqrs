@@ -17,33 +17,49 @@ namespace Ncqrs
     /// <remarks>
     /// Make sure to call the <see cref="Configure"/> method before doing anything else with this class.
     /// </remarks></summary>
-    public static class NcqrsEnvironment
+    public class NcqrsEnvironment
     {
+        private static NcqrsEnvironment _Instance;
+
+        internal NcqrsEnvironment()
+        {
+        }
+
         private static readonly ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
-        static NcqrsEnvironment()
+        public static NcqrsEnvironment Instance
         {
-            InitDefaults();
+            get
+            {
+                if (_Instance == null)
+                {
+                    _Instance = new NcqrsEnvironment();
+                    _Instance.InitDefaults();
+                }
+
+                return (_Instance);
+
+            }
         }
 
         /// <summary>
         /// Initialize defaults with default components.
         /// </summary>
-        private static void InitDefaults()
+        private void InitDefaults()
         {
             // Initialize defaults.
-            SetDefault<IClock>(new DateTimeBasedClock());
-            SetDefault<IUniqueIdentifierGenerator>(new BasicGuidGenerator());
-            SetDefault<IEventBus>(new InProcessEventBus());
-            SetDefault<IEventStore>(new InMemoryEventStore());
-            SetDefault<ISnapshotStore>(new NullSnapshotStore());
-            SetDefault<IUnitOfWorkFactory>(new UnitOfWorkFactory());
-            SetDefault<IKnownCommandsEnumerator>(new AllCommandsInAppDomainEnumerator());
-            SetDefault<ITransactionService>(new DefaultTransactionService());
-            SetDefault<ISnapshottingPolicy>(new NoSnapshottingPolicy());
-            SetDefault<IAggregateRootCreationStrategy>(new SimpleAggregateRootCreationStrategy());
-            SetDefault<IAggregateSupportsSnapshotValidator>(new AggregateSupportsSnapshotValidator());
-            SetDefault<IAggregateSnapshotter>(new DefaultAggregateSnapshotter(Get<IAggregateRootCreationStrategy>(), Get<IAggregateSupportsSnapshotValidator>()));
+            SetDefaultInternal<IClock>(new DateTimeBasedClock());
+            SetDefaultInternal<IUniqueIdentifierGenerator>(new BasicGuidGenerator());
+            SetDefaultInternal<IEventBus>(new InProcessEventBus());
+            SetDefaultInternal<IEventStore>(new InMemoryEventStore());
+            SetDefaultInternal<ISnapshotStore>(new NullSnapshotStore());
+            SetDefaultInternal<IUnitOfWorkFactory>(new UnitOfWorkFactory());
+            SetDefaultInternal<IKnownCommandsEnumerator>(new AllCommandsInAppDomainEnumerator());
+            SetDefaultInternal<ITransactionService>(new DefaultTransactionService());
+            SetDefaultInternal<ISnapshottingPolicy>(new NoSnapshottingPolicy());
+            SetDefaultInternal<IAggregateRootCreationStrategy>(new SimpleAggregateRootCreationStrategy());
+            SetDefaultInternal<IAggregateSupportsSnapshotValidator>(new AggregateSupportsSnapshotValidator());
+            SetDefaultInternal<IAggregateSnapshotter>(new DefaultAggregateSnapshotter(Get<IAggregateRootCreationStrategy>(), Get<IAggregateSupportsSnapshotValidator>()));
         }
 
         /// <summary>
@@ -52,12 +68,12 @@ namespace Ncqrs
         /// <remarks>
         /// Use the <see cref="SetDefault{T}"/> method to set a default.
         /// </remarks>
-        private static readonly Dictionary<Type, Object> _defaults = new Dictionary<Type, object>(0);
+        private readonly Dictionary<Type, Object> _defaults = new Dictionary<Type, object>(0);
 
         /// <summary>
         /// Hold the environment configuration. This is initialized by the <see cref="Configure"/> method.
         /// </summary>
-        private static IEnvironmentConfiguration _instance;
+        private IEnvironmentConfiguration _instance;
 
         /// <summary>
         /// Gets or create the requested instance specified by the parameter <typeparamref name="T"/>.
@@ -79,23 +95,28 @@ namespace Ncqrs
 
             T result = null;
 
-            if (_instance == null || !_instance.TryGet(out result))
+            if (Instance._instance == null || !Instance._instance.TryGet(out result))
             {
                 object defaultResult;
 
-                if (_defaults.TryGetValue(typeof(T), out defaultResult))
+                if (Instance._defaults.TryGetValue(typeof(T), out defaultResult))
                 {
                     result = (T)defaultResult;
-                    
+
                 }
             }
 
-            if(result == null)
+            if (result == null)
                 throw new InstanceNotFoundInEnvironmentConfigurationException(typeof(T));
 
             return result;
         }
 
+        private void SetDefaultInternal<T>(T instance) where T : class
+        {
+            Contract.Requires<ArgumentNullException>(instance != null, "The instance cannot be null.");
+            _defaults[typeof(T)] = instance;
+        }
         /// <summary>
         /// Sets the default for an type. This default instance is returned when
         /// the configured <see cref="IEnvironmentConfiguration"/> did not
@@ -108,9 +129,7 @@ namespace Ncqrs
         /// <param name="instance">The instance to set as default.</param>
         public static void SetDefault<T>(T instance) where T : class
         {
-            Contract.Requires<ArgumentNullException>(instance != null, "The instance cannot be null.");
-
-            _defaults[typeof(T)] = instance;
+            Instance.SetDefaultInternal(instance);
         }
 
         /// <summary>
@@ -120,7 +139,7 @@ namespace Ncqrs
         /// <typeparam name="T">The registered default type.</typeparam>
         public static void RemoveDefault<T>() where T : class
         {
-            _defaults.Remove(typeof(T));
+            Instance._defaults.Remove(typeof(T));
         }
 
         /// <summary>
@@ -131,10 +150,10 @@ namespace Ncqrs
         {
             Contract.Requires<ArgumentNullException>(source != null, "The source cannot be null.");
             Contract.Requires<InvalidOperationException>(!IsConfigured, "Cannot configure the environment when it is already configured.");
-            Contract.Ensures(_instance == source, "The given source should initialize the _instance member.");
+            Contract.Ensures(Instance._instance == source, "The given source should initialize the _instance member.");
             Contract.Ensures(IsConfigured, "The given source should configure this environment.");
 
-            _instance = source;
+            Instance._instance = source;
 
             Log.InfoFormat("Ncqrs environment configured with {0} configuration source.", source.GetType().FullName);
         }
@@ -144,10 +163,10 @@ namespace Ncqrs
         /// </summary>
         public static void Deconfigure()
         {
-            _instance = null;
-            _defaults.Clear();
+            Instance._instance = null;
+            Instance._defaults.Clear();
 
-            InitDefaults();
+            Instance.InitDefaults();
         }
 
         /// <summary>
@@ -160,7 +179,7 @@ namespace Ncqrs
         {
             get
             {
-                return _instance != null;
+                return Instance._instance != null;
             }
         }
 
@@ -170,7 +189,7 @@ namespace Ncqrs
         /// <remarks>
         /// Returns the current environment configuration, or null if not configured
         /// </remarks>
-        public static IEnvironmentConfiguration CurrentConfiguration { get { return _instance; } }
+        public static IEnvironmentConfiguration CurrentConfiguration { get { return Instance._instance; } }
 
     }
 }
